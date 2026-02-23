@@ -1,0 +1,192 @@
+import React, { useState } from 'react';
+import { StatsCard } from './StatsCard';
+import { Coins, DollarSign, Droplets, AlertTriangle, Activity, RotateCcw, X, Info, Loader2, Zap, Download, ChevronRight } from 'lucide-react';
+import { VendoState } from '../types';
+
+interface DashboardProps {
+  state: VendoState;
+  activeUnitId: string;
+  onReset: () => void;
+  onResetCounter: () => void;
+  onExport: () => void;
+  isResetting?: boolean;
+}
+
+export const Dashboard: React.FC<DashboardProps> = ({ 
+  state, 
+  activeUnitId,
+  onReset, 
+  onResetCounter, 
+  onExport,
+  isResetting = false
+}) => {
+  const [showAlertModal, setShowAlertModal] = useState(false);
+  const { p1, p5, p10 } = state.coins;
+  const totalEarnings = (p1 * 1) + (p5 * 5) + (p10 * 10);
+  const totalCoins = p1 + p5 + p10;
+
+  const getWaterStatus = () => {
+    const level = state.waterLevel;
+    if (level <= 0) return { label: 'EMPTY', color: 'text-red-600', bg: 'bg-red-50', severity: 'High' };
+    if (level < 20) return { label: 'CRITICAL', color: 'text-red-500', bg: 'bg-red-50', severity: 'Medium' };
+    if (level < 60) return { label: 'NOMINAL', color: 'text-orange-600', bg: 'bg-orange-50', severity: 'Low' };
+    return { label: 'OPTIMAL', color: 'text-emerald-600', bg: 'bg-emerald-50', severity: 'None' };
+  };
+
+  const status = getWaterStatus();
+
+  return (
+    <div className="space-y-8 sm:space-y-12 animate-in">
+      <header className="flex flex-col lg:flex-row lg:items-end justify-between gap-6 sm:gap-8">
+        <div>
+          <div className="flex items-center gap-3 sm:gap-4 mb-2 sm:mb-3">
+             <div className="p-3 sm:p-4 bg-emerald-50 text-emerald-600 rounded-[16px] sm:rounded-[20px] shadow-sm border border-emerald-100">
+               <Zap className="w-6 h-6 sm:w-7 sm:h-7 animate-pulse" />
+             </div>
+             <h1 className="text-3xl sm:text-4xl font-black text-slate-900 tracking-tighter">System Console</h1>
+          </div>
+          <div className="flex items-center gap-3 sm:gap-4">
+            <span className="text-[9px] sm:text-[10px] font-black uppercase text-blue-600 tracking-widest bg-blue-50 px-2 sm:px-3 py-1 rounded-full border border-blue-100 flex items-center gap-1.5">
+              <Activity size={10} /> {activeUnitId}
+            </span>
+            <div className="h-3 sm:h-4 w-[1px] bg-slate-200" />
+            <span className="text-[9px] sm:text-[10px] font-black uppercase text-slate-400 tracking-widest">Last Telemetry: {state.lastUpdated}</span>
+          </div>
+        </div>
+        
+        <div className="flex items-center gap-3 sm:gap-4">
+            <button 
+                onClick={onResetCounter}
+                disabled={isResetting}
+                className={`flex-1 sm:flex-none flex items-center justify-center gap-2 sm:gap-3 px-6 sm:px-8 py-4 sm:py-5 rounded-[20px] sm:rounded-[24px] transition-all font-black text-[10px] sm:text-xs uppercase tracking-widest shadow-xl border-b-[4px] sm:border-b-[6px] active:border-b-0 active:translate-y-1 ${isResetting ? 'bg-slate-200 text-slate-400 border-slate-300 cursor-not-allowed' : 'bg-slate-900 text-white border-slate-700 hover:bg-slate-800'}`}
+            >
+                {isResetting ? <Loader2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5 sm:w-4 sm:h-4" />}
+                {isResetting ? 'Processing...' : 'Reset Counter'}
+            </button>
+            <button onClick={onExport} className="p-4 sm:p-5 bg-white text-slate-400 rounded-[20px] sm:rounded-[24px] border border-slate-100 hover:text-blue-600 hover:border-blue-100 transition-all shadow-lg active:scale-95">
+              <Download className="w-5 h-5 sm:w-6 sm:h-6" />
+            </button>
+        </div>
+      </header>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+        <StatsCard 
+          title="₱1 Storage" 
+          value={p1} 
+          subtitle={`₱${(p1 * 1).toLocaleString()}`} 
+          icon={<Coins size={28} className="text-blue-600" />} 
+          iconBgColor="bg-blue-600" 
+          textColor="text-slate-900" 
+        />
+        <StatsCard 
+          title="₱5 Storage" 
+          value={p5} 
+          subtitle={`₱${(p5 * 5).toLocaleString()}`} 
+          icon={<Coins size={28} className="text-emerald-600" />} 
+          iconBgColor="bg-emerald-600" 
+          textColor="text-slate-900" 
+        />
+        <StatsCard 
+          title="₱10 Storage" 
+          value={p10} 
+          subtitle={`₱${(p10 * 10).toLocaleString()}`} 
+          icon={<Coins size={28} className="text-violet-600" />} 
+          iconBgColor="bg-violet-600" 
+          textColor="text-slate-900" 
+        />
+        <StatsCard 
+          title="Net Earnings" 
+          value={`₱${totalEarnings.toLocaleString()}`} 
+          subtitle={`${totalCoins} PCS`} 
+          icon={<DollarSign size={28} className="text-amber-600" />} 
+          iconBgColor="bg-amber-600" 
+          textColor="text-amber-600" 
+        />
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-8">
+        <div className="bg-white p-6 sm:p-10 rounded-[32px] sm:rounded-[48px] border border-slate-100 shadow-xl flex items-center justify-between group overflow-hidden relative">
+            <div className="absolute top-0 right-0 w-24 h-24 sm:w-32 sm:h-32 bg-blue-50 rounded-bl-[80px] sm:rounded-bl-[100px] -mr-8 -mt-8 sm:-mr-10 sm:-mt-10 opacity-40 group-hover:scale-110 transition-transform"></div>
+            <div className="flex items-center gap-4 sm:gap-8 relative z-10">
+               <div className={`p-4 sm:p-6 rounded-[20px] sm:rounded-[24px] ${status.bg} ${status.color} shadow-lg`}>
+                  <Droplets className="w-7 h-7 sm:w-9 sm:h-9" />
+               </div>
+               <div>
+                  <p className="text-[9px] sm:text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 sm:mb-2">Liquid Reservoir</p>
+                  <h4 className={`text-3xl sm:text-5xl font-black ${status.color}`}>{state.waterLevel}%</h4>
+                  <p className="text-[10px] sm:text-[11px] font-bold text-slate-500 mt-1 sm:mt-2 uppercase tracking-tighter">Supply: {status.label}</p>
+               </div>
+            </div>
+            <div className="h-16 w-16 sm:h-20 sm:w-20 relative hidden sm:block">
+               <svg className="w-full h-full transform -rotate-90">
+                 <circle cx="40" cy="40" r="34" fill="transparent" stroke="#f1f5f9" strokeWidth="10" />
+                 <circle cx="40" cy="40" r="34" fill="transparent" stroke="currentColor" strokeWidth="10" strokeDasharray={213.6} strokeDashoffset={213.6 - (213.6 * state.waterLevel / 100)} className={`${status.color} transition-all duration-1000`} strokeLinecap="round" />
+               </svg>
+            </div>
+        </div>
+
+        <div 
+          onClick={() => setShowAlertModal(true)}
+          className="group cursor-pointer bg-white p-6 sm:p-10 rounded-[32px] sm:rounded-[48px] border border-slate-100 shadow-xl flex items-center justify-between transition-all hover:scale-[1.02] relative overflow-hidden"
+        >
+            <div className="absolute bottom-0 right-0 w-24 h-24 sm:w-32 sm:h-32 bg-slate-50 rounded-tl-[80px] sm:rounded-tl-[100px] -mb-8 -mr-8 sm:-mb-10 sm:-mr-10 opacity-40"></div>
+            <div className="flex items-center gap-4 sm:gap-8 relative z-10">
+               <div className={`p-4 sm:p-6 rounded-[20px] sm:rounded-[24px] ${state.waterLevel < 20 ? 'bg-red-50 text-red-600' : 'bg-slate-100 text-slate-600'} shadow-lg group-hover:bg-blue-600 group-hover:text-white transition-colors`}>
+                  <AlertTriangle className="w-7 h-7 sm:w-9 sm:h-9" />
+               </div>
+               <div>
+                  <p className="text-[9px] sm:text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 sm:mb-2">Health Diagnostics</p>
+                  <h4 className="text-xl sm:text-2xl font-black text-slate-900">System Alerts</h4>
+                  <p className="text-[10px] sm:text-[11px] font-bold text-slate-500 mt-1 sm:mt-2 uppercase tracking-tighter">Tap for audit</p>
+               </div>
+            </div>
+            <div className="p-3 sm:p-4 bg-slate-50 text-slate-300 rounded-[16px] sm:rounded-[20px] group-hover:bg-blue-600 group-hover:text-white transition-all shadow-sm">
+              <ChevronRight className="w-5 h-5 sm:w-6 sm:h-6" />
+            </div>
+        </div>
+      </div>
+
+      {showAlertModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 bg-[#0f172a]/80 backdrop-blur-md animate-in">
+          <div className="bg-white rounded-[32px] sm:rounded-[48px] shadow-[0_40px_100px_rgba(0,0,0,0.3)] w-full max-w-xl overflow-hidden">
+            <div className="p-6 sm:p-10 border-b border-slate-50 flex justify-between items-center">
+              <div>
+                <h3 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tighter">System Alerts & Logs</h3>
+                <p className="text-[9px] sm:text-[10px] text-slate-400 font-black uppercase tracking-widest">Active Audit Loop</p>
+              </div>
+              <button onClick={() => setShowAlertModal(false)} className="p-3 sm:p-4 hover:bg-slate-100 rounded-[16px] sm:rounded-[20px] transition-all">
+                <X className="w-5 h-5 sm:w-6 sm:h-6" />
+              </button>
+            </div>
+            <div className="p-6 sm:p-10 space-y-4 sm:space-y-5 max-h-[50vh] overflow-y-auto custom-scrollbar">
+              {[
+                { type: 'Supply System', msg: state.waterLevel < 20 ? 'Critical: Reservoir below 20% limit.' : 'Main supply pressure optimal.', time: state.lastUpdated, severity: state.waterLevel < 20 ? 'high' : 'low' },
+                { type: 'Internal Vault', msg: totalCoins > 500 ? 'Warning: Collector bin near capacity.' : 'Vault storage space confirmed.', time: 'Real-time', severity: totalCoins > 500 ? 'medium' : 'low' },
+                { type: 'Data Link', msg: 'Encrypted tunnel to Supabase verified.', time: 'Continuous', severity: 'low' },
+                { type: 'Power Management', msg: 'Bus voltage stable at 12.0V.', time: '04:12 AM', severity: 'low' }
+              ].map((alert, i) => (
+                <div key={i} className={`p-4 sm:p-6 rounded-[24px] sm:rounded-[32px] border flex gap-4 sm:gap-6 transition-all ${alert.severity === 'high' ? 'bg-red-50 border-red-100 text-red-900' : alert.severity === 'medium' ? 'bg-orange-50 border-orange-100 text-orange-900' : 'bg-slate-50 border-slate-100 text-slate-900'}`}>
+                   <div className={`p-3 sm:p-4 rounded-[16px] sm:rounded-[20px] shrink-0 h-fit ${alert.severity === 'high' ? 'bg-red-200 shadow-inner' : alert.severity === 'medium' ? 'bg-orange-200' : 'bg-blue-200'}`}>
+                      <Info className="w-4.5 h-4.5 sm:w-5 sm:h-5" />
+                   </div>
+                   <div className="flex-1">
+                      <div className="flex justify-between items-start mb-1 sm:mb-2">
+                        <span className="font-black text-[9px] sm:text-[10px] uppercase tracking-widest opacity-60">{alert.type}</span>
+                        <span className="text-[9px] sm:text-[10px] opacity-40 font-black">{alert.time}</span>
+                      </div>
+                      <p className="text-xs sm:text-sm font-bold leading-relaxed">{alert.msg}</p>
+                   </div>
+                </div>
+              ))}
+            </div>
+            <div className="p-6 sm:p-10 bg-slate-50 border-t border-slate-100">
+              <button onClick={() => setShowAlertModal(false)} className="w-full py-4 sm:py-6 bg-white border border-slate-200 text-slate-900 font-black text-[10px] sm:text-xs uppercase tracking-[0.1em] sm:tracking-[0.2em] rounded-[20px] sm:rounded-[24px] hover:bg-slate-900 hover:text-white hover:border-slate-900 transition-all shadow-sm active:scale-[0.98]">
+                Close Diagnostic View
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
