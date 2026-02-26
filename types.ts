@@ -23,9 +23,11 @@ export interface HistoryEntry {
 }
 
 export interface VendoState {
-  coins: CoinData;
+  insertedCoins: CoinData;
+  changeBank: { p1: number; p5: number };
   waterLevel: number;
   systemAlerts: string;
   lastUpdated: string;
+  lastSeen: string | null;
   history: HistoryEntry[];
 }

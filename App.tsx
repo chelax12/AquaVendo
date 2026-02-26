@@ -26,13 +26,18 @@ import { Section, VendoState, HistoryEntry } from './types';
 import { NAV_ITEMS } from './constants';
 import { Dashboard } from './components/Dashboard';
 import { SalesReport } from './components/SalesReport';
+import { io } from 'socket.io-client';
 import { supabase } from './lib/supabase';
 
+import { Auth } from './src/components/auth/Auth';
+
 const INITIAL_STATE: VendoState = {
-  coins: { p1: 0, p5: 0, p10: 0 },
+  insertedCoins: { p1: 0, p5: 0, p10: 0 },
+  changeBank: { p1: 0, p5: 0 },
   waterLevel: 0,
   systemAlerts: 'Operational',
   lastUpdated: 'Initializing...',
+  lastSeen: null,
   history: [],
 };
 
@@ -43,7 +48,33 @@ const App: React.FC = () => {
   const [state, setState] = useState<VendoState>(INITIAL_STATE);
   const [dbStatus, setDbStatus] = useState<'connected' | 'reconnecting' | 'error'>('reconnecting');
   const [isResetting, setIsResetting] = useState(false);
+  const [session, setSession] = useState<any>(null);
   const [ignoreRealtimeUntil, setIgnoreRealtimeUntil] = useState<number>(0);
+
+  const transformDataToNewState = (data: any): VendoState => {
+    if (!data) return INITIAL_STATE;
+
+    // This is the compatibility layer. If old `coins` data comes in,
+    // map it to the new `insertedCoins` structure.
+    const insertedCoins = data.insertedCoins || data.coins || { p1: 0, p5: 0, p10: 0 };
+
+    return {
+      insertedCoins: {
+        p1: insertedCoins.p1_count ?? insertedCoins.p1 ?? 0,
+        p5: insertedCoins.p5_count ?? insertedCoins.p5 ?? 0,
+        p10: insertedCoins.p10_count ?? insertedCoins.p10 ?? 0,
+      },
+      changeBank: {
+        p1: data.change_p1_count ?? 0,
+        p5: data.change_p5_count ?? 0,
+      },
+      waterLevel: data.water_level ?? data.waterLevel ?? 0,
+      systemAlerts: data.system_status ?? data.systemAlerts ?? 'Offline',
+      lastUpdated: data.updated_at ? new Date(data.updated_at).toLocaleTimeString() : 'N/A',
+      lastSeen: data.last_seen_at ? new Date(data.last_seen_at).toLocaleString() : null,
+      history: data.history || [],
+    };
+  };
   
   // Multi-machine management
   const [activeUnitId, setActiveUnitId] = useState<string>(() => {
@@ -54,177 +85,146 @@ const App: React.FC = () => {
   const [newUnitInput, setNewUnitInput] = useState('');
 
   const fetchUnits = useCallback(async () => {
+    if (!session?.user) return;
+
     try {
-      const { data, error } = await supabase.from('machine_state').select('unit_id');
-      if (error) throw error;
-      if (data && data.length > 0) {
-        const ids = data.map(d => d.unit_id);
+      const { data: deviceData, error: deviceError } = await supabase
+        .from('devices')
+        .select('unit_id')
+        .eq('owner_id', session.user.id);
+
+      if (deviceError) throw deviceError;
+
+      if (deviceData && deviceData.length > 0) {
+        const ids = deviceData.map(d => d.unit_id);
         setUnitList(ids);
-        // If current active is not in list, pick first
-        if (!ids.includes(activeUnitId)) {
-          setActiveUnitId(ids[0]);
+        
+        if (!ids.includes(activeUnitId) || !activeUnitId) {
+          const newActiveId = ids[0];
+          setActiveUnitId(newActiveId);
+          localStorage.setItem('active_unit_id', newActiveId);
         }
       } else {
-        setUnitList(['AQUA-VND-001']);
+        setUnitList([]);
+        setActiveUnitId('');
+        localStorage.removeItem('active_unit_id');
       }
     } catch (err) {
       console.error('Fetch units error:', err);
     }
-  }, [activeUnitId]);
+  }, [session, activeUnitId]);
 
-  const fetchAllData = useCallback(async () => {
-    try {
-      setDbStatus('reconnecting');
-      const [machineRes, historyRes] = await Promise.all([
-        supabase.from('machine_state').select('*').eq('unit_id', activeUnitId).maybeSingle(),
-        supabase.from('collection_history').select('*').eq('unit_id', activeUnitId).order('collected_at', { ascending: false })
-      ]);
 
-      if (machineRes.error) throw machineRes.error;
-      
-      if (machineRes.data) {
-        setState(prev => ({
-          ...prev,
-          coins: {
-            p1: machineRes.data.p1_count || 0,
-            p5: machineRes.data.p5_count || 0,
-            p10: machineRes.data.p10_count || 0
-          },
-          waterLevel: machineRes.data.water_level || 0,
-          systemAlerts: machineRes.data.system_status || 'Operational',
-          lastUpdated: new Date(machineRes.data.updated_at || new Date()).toLocaleTimeString(),
-          history: (historyRes.data || []).map(item => ({
-            id: item.id,
-            date: new Date(item.collected_at).toLocaleString(),
-            p1: item.p1_collected,
-            p5: item.p5_collected,
-            p10: item.p10_collected,
-            total: Number(item.total_amount)
-          }))
-        }));
-      } else {
-        // If machine doesn't exist yet, show zero state but don't error
-        setState({ ...INITIAL_STATE, history: [] });
-      }
-      setDbStatus('connected');
-    } catch (err) {
-      console.error('Fetch error:', err);
-      setDbStatus('error');
-    }
-  }, [activeUnitId]);
+
 
   useEffect(() => {
-    const logged = localStorage.getItem('vendo_logged_in');
-    if (logged === 'true') setIsLoggedIn(true);
-    else {
-        setIsLoggedIn(true);
-        localStorage.setItem('vendo_logged_in', 'true');
-    }
+    const socket = io();
 
-    fetchUnits();
-    fetchAllData();
+    socket.on('connect', () => {
+      setDbStatus('connected');
+      socket.emit('requestInitialData', activeUnitId);
+    });
 
-    // STRICT REALTIME SUBSCRIPTION
-    const channel = supabase.channel(`realtime-${activeUnitId}`)
-      .on(
-        'postgres_changes', 
-        { 
-          event: '*', 
-          schema: 'public', 
-          table: 'machine_state',
-          filter: `unit_id=eq.${encodeURIComponent(activeUnitId)}` 
-        }, 
-        (payload) => {
-          // Skip if within ignore window
-          if (Date.now() < ignoreRealtimeUntil) {
-            console.log("Ignoring realtime update (within ignore window)");
-            return;
-          }
+    socket.on('disconnect', () => {
+      setDbStatus('reconnecting');
+    });
 
-          const d = payload.new as any;
-          if (d && Object.keys(d).length > 0) {
-            setState(prev => ({ 
-              ...prev, 
-              coins: { 
-                p1: typeof d.p1_count !== 'undefined' ? d.p1_count : prev.coins.p1, 
-                p5: typeof d.p5_count !== 'undefined' ? d.p5_count : prev.coins.p5, 
-                p10: typeof d.p10_count !== 'undefined' ? d.p10_count : prev.coins.p10 
-              },
-              waterLevel: typeof d.water_level !== 'undefined' ? d.water_level : prev.waterLevel,
-              systemAlerts: d.system_status || prev.systemAlerts,
-              lastUpdated: new Date().toLocaleTimeString()
-            }));
-          } else {
-            fetchAllData();
-          }
-        }
-      )
-      .on(
-        'postgres_changes',
-        { 
-          event: 'INSERT', 
-          schema: 'public', 
-          table: 'collection_history', 
-          filter: `unit_id=eq.${encodeURIComponent(activeUnitId)}` 
-        },
-        () => {
-          if (Date.now() < ignoreRealtimeUntil) return;
-          fetchAllData();
-        }
-      )
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') setDbStatus('connected');
-        if (status === 'CLOSED' || status === 'CHANNEL_ERROR') setDbStatus('error');
-      });
+    socket.on('initialData', (data) => {
+      setState(transformDataToNewState(data));
+    });
+
+    socket.on('update', (update) => {
+      if (update.unitId === activeUnitId) {
+        setState(transformDataToNewState(update.data));
+      }
+    });
+
+    socket.on('dataError', (error) => {
+      console.error('Data error from server:', error);
+      setDbStatus('error');
+    });
 
     return () => {
-      supabase.removeChannel(channel);
+      socket.disconnect();
     };
-  }, [fetchAllData, activeUnitId]);
+  }, [activeUnitId]);
 
-  // Persist machine list
   useEffect(() => {
-    localStorage.setItem('unit_list', JSON.stringify(unitList));
-    localStorage.setItem('active_unit_id', activeUnitId);
-  }, [unitList, activeUnitId]);
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+    });
 
-  const handleAddUnit = async () => {
-    const unitId = newUnitInput.trim().toUpperCase();
-    if (!unitId) return;
-    
-    if (unitList.includes(unitId)) {
-      alert("Machine ID already in fleet.");
-      return;
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+    });
+
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (session) {
+      fetchUnits();
     }
+  }, [session, fetchUnits]);
 
-    setIsResetting(true); // Use this as a general loading state
+
+
+  const fetchAllData = useCallback(async () => {
+    // This function can be used to manually refresh data if needed
+    // but the primary data flow is through websockets.
+  }, [activeUnitId]);
+
+  const handleDeleteUnit = async (unitIdToDelete: string) => {
+    const confirmDelete = window.confirm(
+      `Are you sure you want to permanently delete machine ${unitIdToDelete}?\n\nThis action cannot be undone.`
+    );
+    if (!confirmDelete) return;
+
     try {
-      console.log(`Registering new unit: ${unitId}`);
-      // Create the record in the database
-      const { error } = await supabase.from('machine_state').upsert({
-        unit_id: unitId,
-        p1_count: 0,
-        p5_count: 0,
-        p10_count: 0,
-        water_level: 100,
-        system_status: 'Operational',
-        updated_at: new Date().toISOString()
-      });
-
+      const { error } = await supabase.from('machine_state').delete().eq('unit_id', unitIdToDelete);
       if (error) throw error;
 
-      setUnitList(prev => [...prev, unitId]);
-      setActiveUnitId(unitId);
+      const newUnitList = unitList.filter(id => id !== unitIdToDelete);
+      setUnitList(newUnitList);
+
+      if (activeUnitId === unitIdToDelete) {
+        setActiveUnitId(newUnitList.length > 0 ? newUnitList[0] : 'AQUA-VND-001');
+      }
+
+      alert(`Machine ${unitIdToDelete} has been successfully deleted.`);
+    } catch (err: any) {
+      console.error('Delete unit error:', err);
+      alert(`Failed to delete machine: ${err.message}`);
+    }
+  };
+
+  const handleAddUnit = async () => {
+    const enteredCode = newUnitInput.trim().toUpperCase();
+    if (!enteredCode) return;
+
+    setIsResetting(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        throw new Error("You must be logged in to register a device.");
+      }
+
+      const { error } = await supabase.rpc("claim_device", { p_code: enteredCode });
+
+      if (error) {
+        throw error;
+      }
+
+      alert(`Node ${enteredCode} successfully registered and active.`);
+      fetchUnits();
       setNewUnitInput('');
       setShowAddUnit(false);
-      
-      // Refresh data for the new unit
-      await fetchAllData();
-      
-      alert(`Node ${unitId} successfully registered and active.`);
+
     } catch (err: any) {
-      console.error('Add unit error:', err);
-      alert(`Failed to save node: ${err.message}`);
+      console.error('Register Node error:', err);
+      alert(`Error: ${err.message}`);
     } finally {
       setIsResetting(false);
     }
@@ -246,7 +246,7 @@ const App: React.FC = () => {
       return;
     }
 
-    const { p1, p5, p10 } = state.coins;
+    const { p1, p5, p10 } = state.insertedCoins || { p1: 0, p5: 0, p10: 0 };
     const totalVal = p1 * 1 + p5 * 5 + p10 * 10;
 
     const confirmReset = window.confirm(
@@ -322,8 +322,7 @@ const App: React.FC = () => {
           collected_at: new Date().toISOString()
       }]);
 
-      // refresh UI data
-      await fetchAllData?.();
+
 
       // Set ignore window for realtime updates (5 seconds)
       setIgnoreRealtimeUntil(Date.now() + 5000);
@@ -492,9 +491,12 @@ const App: React.FC = () => {
                       {unitList.map(unit => (
                         <div key={unit} className={`p-6 rounded-[28px] border flex items-center justify-between transition-all ${activeUnitId === unit ? 'bg-blue-600 border-blue-600 text-white shadow-xl shadow-blue-200' : 'bg-white border-slate-100 text-slate-600'}`}>
                            <span className="font-black text-sm tracking-tight">{unit}</span>
-                           {activeUnitId === unit ? <CheckCircle2 size={18} /> : (
-                             <button onClick={() => setActiveUnitId(unit)} className="text-[10px] font-black uppercase tracking-widest opacity-40 hover:opacity-100 underline decoration-2">Select</button>
-                           )}
+                           <div className="flex items-center gap-2">
+                              {activeUnitId !== unit && <button onClick={() => handleDeleteUnit(unit)} className="text-[10px] font-black uppercase tracking-widest opacity-40 hover:opacity-100 text-red-500">Delete</button>}
+                              {activeUnitId === unit ? <CheckCircle2 size={18} /> : (
+                                <button onClick={() => setActiveUnitId(unit)} className="text-[10px] font-black uppercase tracking-widest opacity-40 hover:opacity-100 underline decoration-2">Select</button>
+                              )}
+                            </div>
                         </div>
                       ))}
                       <button onClick={() => setShowAddUnit(true)} className="p-6 rounded-[28px] border-2 border-dashed border-slate-200 flex items-center justify-center gap-3 text-slate-400 hover:border-blue-400 hover:text-blue-600 transition-all font-black text-[10px] uppercase tracking-widest">
@@ -510,19 +512,9 @@ const App: React.FC = () => {
     }
   };
 
-  if (!isLoggedIn) return (
-    <div className="h-screen flex items-center justify-center bg-[#f8fafc]">
-       <div className="flex flex-col items-center gap-8 animate-pulse">
-          <div className="w-24 h-24 bg-blue-600 rounded-[40px] flex items-center justify-center text-white shadow-[0_20px_60px_rgba(37,99,235,0.3)]">
-            <Droplets size={48} />
-          </div>
-          <div className="text-center">
-            <p className="font-black text-slate-900 uppercase tracking-[0.5em] text-sm">Aquaflow Terminal Pro</p>
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-2">Authenticating Node Cluster...</p>
-          </div>
-       </div>
-    </div>
-  );
+  if (!session) {
+    return <Auth />;
+  }
 
   return (
     <div className="min-h-screen flex bg-[#f8fafc] text-slate-900 selection:bg-blue-100 selection:text-blue-600">
@@ -544,7 +536,7 @@ const App: React.FC = () => {
             </div>
           </div>
           
-          <nav className="flex-1 px-8 space-y-3 mt-12">
+          <nav className="flex-1 px-8 space-y-3 mt-12 overflow-y-auto no-scrollbar">
             {NAV_ITEMS.map((item) => (
               <button 
                 key={item.id} 
@@ -559,18 +551,15 @@ const App: React.FC = () => {
           </nav>
 
           <div className="p-10 mt-auto">
-            <div className="p-8 bg-white/5 rounded-[40px] border border-white/5">
-                <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mb-6">Security Context</p>
-                <button 
-                  onClick={() => {
-                    localStorage.removeItem('vendo_logged_in');
-                    window.location.reload();
-                  }} 
-                  className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-red-500/10 text-red-500 font-black text-[11px] uppercase tracking-widest rounded-2xl hover:bg-red-500 hover:text-white transition-all shadow-lg"
-                >
-                  <LogOut size={16} /> Close Terminal
-                </button>
-            </div>
+            <button 
+              onClick={async () => {
+                await supabase.auth.signOut();
+                // The onAuthStateChange listener will handle the session update
+              }} 
+              className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-red-500/10 text-red-500 font-black text-[11px] uppercase tracking-widest rounded-2xl hover:bg-red-500 hover:text-white transition-all shadow-lg"
+            >
+              <LogOut size={16} /> Close Terminal
+            </button>
           </div>
         </div>
       </aside>

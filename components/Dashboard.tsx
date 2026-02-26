@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { StatsCard } from './StatsCard';
 import { Coins, DollarSign, Droplets, AlertTriangle, Activity, RotateCcw, X, Info, Loader2, Zap, Download, ChevronRight } from 'lucide-react';
 import { VendoState } from '../types';
+import { getCoinStatus } from '../src/utils';
 
 interface DashboardProps {
   state: VendoState;
@@ -21,12 +22,20 @@ export const Dashboard: React.FC<DashboardProps> = ({
   isResetting = false
 }) => {
   const [showAlertModal, setShowAlertModal] = useState(false);
-  const { p1, p5, p10 } = state.coins;
+  const { 
+    insertedCoins = { p1: 0, p5: 0, p10: 0 }, 
+    changeBank = { p1: 0, p5: 0 },
+    waterLevel = 0
+  } = state || {};
+
+  const { p1, p5, p10 } = insertedCoins;
   const totalEarnings = (p1 * 1) + (p5 * 5) + (p10 * 10);
   const totalCoins = p1 + p5 + p10;
+  const p1ChangeStatus = getCoinStatus(changeBank.p1);
+  const p5ChangeStatus = getCoinStatus(changeBank.p5);
 
   const getWaterStatus = () => {
-    const level = state.waterLevel;
+    const level = waterLevel;
     if (level <= 0) return { label: 'EMPTY', color: 'text-red-600', bg: 'bg-red-50', severity: 'High' };
     if (level < 20) return { label: 'CRITICAL', color: 'text-red-500', bg: 'bg-red-50', severity: 'Medium' };
     if (level < 60) return { label: 'NOMINAL', color: 'text-orange-600', bg: 'bg-orange-50', severity: 'Low' };
@@ -69,39 +78,66 @@ export const Dashboard: React.FC<DashboardProps> = ({
         </div>
       </header>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
-        <StatsCard 
-          title="₱1 Storage" 
-          value={p1} 
-          subtitle={`₱${(p1 * 1).toLocaleString()}`} 
-          icon={<Coins size={28} className="text-blue-600" />} 
-          iconBgColor="bg-blue-600" 
-          textColor="text-slate-900" 
-        />
-        <StatsCard 
-          title="₱5 Storage" 
-          value={p5} 
-          subtitle={`₱${(p5 * 5).toLocaleString()}`} 
-          icon={<Coins size={28} className="text-emerald-600" />} 
-          iconBgColor="bg-emerald-600" 
-          textColor="text-slate-900" 
-        />
-        <StatsCard 
-          title="₱10 Storage" 
-          value={p10} 
-          subtitle={`₱${(p10 * 10).toLocaleString()}`} 
-          icon={<Coins size={28} className="text-violet-600" />} 
-          iconBgColor="bg-violet-600" 
-          textColor="text-slate-900" 
-        />
-        <StatsCard 
-          title="Net Earnings" 
-          value={`₱${totalEarnings.toLocaleString()}`} 
-          subtitle={`${totalCoins} PCS`} 
-          icon={<DollarSign size={28} className="text-amber-600" />} 
-          iconBgColor="bg-amber-600" 
-          textColor="text-amber-600" 
-        />
+      <div>
+        <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 px-2">Inserted Coins</h3>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+          <StatsCard 
+            title="₱1 Inserted" 
+            value={p1} 
+            subtitle={`₱${(p1 * 1).toLocaleString()}`} 
+            icon={<Coins size={28} className="text-blue-600" />} 
+            iconBgColor="bg-blue-600" 
+            textColor="text-slate-900" 
+          />
+          <StatsCard 
+            title="₱5 Inserted" 
+            value={p5} 
+            subtitle={`₱${(p5 * 5).toLocaleString()}`} 
+            icon={<Coins size={28} className="text-emerald-600" />} 
+            iconBgColor="bg-emerald-600" 
+            textColor="text-slate-900" 
+          />
+          <StatsCard 
+            title="₱10 Inserted" 
+            value={p10} 
+            subtitle={`₱${(p10 * 10).toLocaleString()}`} 
+            icon={<Coins size={28} className="text-violet-600" />} 
+            iconBgColor="bg-violet-600" 
+            textColor="text-slate-900" 
+          />
+          <StatsCard 
+            title="Net Earnings" 
+            value={`₱${totalEarnings.toLocaleString()}`} 
+            subtitle={`${totalCoins} PCS`} 
+            icon={<DollarSign size={28} className="text-amber-600" />} 
+            iconBgColor="bg-amber-600" 
+            textColor="text-amber-600" 
+          />
+        </div>
+      </div>
+
+      <div className="mt-8 sm:mt-12">
+        <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 px-2">Change Bank Status</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
+          <div className="bg-white p-6 sm:p-8 rounded-[32px] border border-slate-100 shadow-xl flex justify-between items-center">
+            <div>
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">P1 Change</p>
+              <span className="text-3xl sm:text-5xl font-black text-slate-800 tracking-tighter">{changeBank.p1}</span>
+            </div>
+            <div className={`px-4 py-2 rounded-full text-xs font-black text-white ${p1ChangeStatus.level === 'OK' ? 'bg-emerald-500' : p1ChangeStatus.level === 'LOW' ? 'bg-amber-500' : 'bg-red-500'}`}>
+              {p1ChangeStatus.text}
+            </div>
+          </div>
+          <div className="bg-white p-6 sm:p-8 rounded-[32px] border border-slate-100 shadow-xl flex justify-between items-center">
+            <div>
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">P5 Change</p>
+              <span className="text-3xl sm:text-5xl font-black text-slate-800 tracking-tighter">{changeBank.p5}</span>
+            </div>
+            <div className={`px-4 py-2 rounded-full text-xs font-black text-white ${p5ChangeStatus.level === 'OK' ? 'bg-emerald-500' : p5ChangeStatus.level === 'LOW' ? 'bg-amber-500' : 'bg-red-500'}`}>
+              {p5ChangeStatus.text}
+            </div>
+          </div>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-8">

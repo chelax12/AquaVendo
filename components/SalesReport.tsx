@@ -10,7 +10,7 @@ interface SalesReportProps {
 }
 
 export const SalesReport: React.FC<SalesReportProps> = ({ state, activeUnitId, onResetCounter, isResetting }) => {
-  const { p1, p5, p10 } = state.coins;
+  const { p1, p5, p10 } = state?.insertedCoins || { p1: 0, p5: 0, p10: 0 };
   const currentVaultTotal = (p1 * 1) + (p5 * 5) + (p10 * 10);
 
   // Aggregation Logic
