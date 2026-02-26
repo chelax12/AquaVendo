@@ -26,7 +26,7 @@ import { Section, VendoState, HistoryEntry } from './types';
 import { NAV_ITEMS } from './constants';
 import { Dashboard } from './components/Dashboard';
 import { SalesReport } from './components/SalesReport';
-import { io } from 'socket.io-client';
+
 import { supabase } from './lib/supabase';
 
 import { Auth } from './src/components/auth/Auth';
@@ -52,30 +52,26 @@ const App: React.FC = () => {
   const [ignoreRealtimeUntil, setIgnoreRealtimeUntil] = useState<number>(0);
 
   const transformDataToNewState = (data: any): VendoState => {
-    if (!data) return INITIAL_STATE;
+  if (!data) return INITIAL_STATE;
 
-    // This is the compatibility layer. If old `coins` data comes in,
-    // map it to the new `insertedCoins` structure.
-    const insertedCoins = data.insertedCoins || data.coins || { p1: 0, p5: 0, p10: 0 };
-
-    return {
-      insertedCoins: {
-        p1: insertedCoins.p1_count ?? insertedCoins.p1 ?? 0,
-        p5: insertedCoins.p5_count ?? insertedCoins.p5 ?? 0,
-        p10: insertedCoins.p10_count ?? insertedCoins.p10 ?? 0,
-      },
-      changeBank: {
-        p1: data.change_p1_count ?? 0,
-        p5: data.change_p5_count ?? 0,
-      },
-      waterLevel: data.water_level ?? data.waterLevel ?? 0,
-      systemAlerts: data.system_status ?? data.systemAlerts ?? 'Offline',
-      lastUpdated: data.updated_at ? new Date(data.updated_at).toLocaleTimeString() : 'N/A',
-      lastSeen: data.last_seen_at ? new Date(data.last_seen_at).toLocaleString() : null,
-      history: data.history || [],
-    };
+  return {
+    insertedCoins: {
+      p1: data.p1_count ?? 0,
+      p5: data.p5_count ?? 0,
+      p10: data.p10_count ?? 0,
+    },
+    changeBank: {
+      p1: data.change_p1_count ?? 0,
+      p5: data.change_p5_count ?? 0,
+    },
+    waterLevel: data.water_level ?? 0,
+    systemAlerts: data.system_status ?? 'Offline',
+    lastUpdated: data.updated_at ? new Date(data.updated_at).toLocaleTimeString() : 'N/A',
+    lastSeen: data.last_seen_at ? new Date(data.last_seen_at).toLocaleString() : null,
+    // history will be loaded from collection_history
+    history: [],
   };
-  
+};
   // Multi-machine management
   const [activeUnitId, setActiveUnitId] = useState<string>(() => {
     return localStorage.getItem('active_unit_id') || 'AQUA-VND-001';
@@ -117,37 +113,7 @@ const App: React.FC = () => {
 
 
 
-  useEffect(() => {
-    const socket = io();
-
-    socket.on('connect', () => {
-      setDbStatus('connected');
-      socket.emit('requestInitialData', activeUnitId);
-    });
-
-    socket.on('disconnect', () => {
-      setDbStatus('reconnecting');
-    });
-
-    socket.on('initialData', (data) => {
-      setState(transformDataToNewState(data));
-    });
-
-    socket.on('update', (update) => {
-      if (update.unitId === activeUnitId) {
-        setState(transformDataToNewState(update.data));
-      }
-    });
-
-    socket.on('dataError', (error) => {
-      console.error('Data error from server:', error);
-      setDbStatus('error');
-    });
-
-    return () => {
-      socket.disconnect();
-    };
-  }, [activeUnitId]);
+ 
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -169,12 +135,90 @@ const App: React.FC = () => {
     }
   }, [session, fetchUnits]);
 
+// -------------------- Supabase fetch (replaces Socket.IO) --------------------
 
+const fetchMachineState = useCallback(async () => {
+  if (!session?.user || !activeUnitId) return;
+
+  try {
+    setDbStatus('reconnecting');
+
+    const { data, error } = await supabase
+      .from('machine_state')
+      .select('*')
+      .eq('unit_id', activeUnitId)
+      .maybeSingle();
+
+    if (error) throw error;
+
+    if (data) {
+      setState(prev => ({
+        ...prev,
+        ...transformDataToNewState(data),
+        // keep any history already loaded
+        history: prev.history,
+      }));
+    }
+
+    setDbStatus('connected');
+  } catch (err) {
+    console.error('fetchMachineState error:', err);
+    setDbStatus('error');
+  }
+}, [session, activeUnitId]);
+
+const fetchHistory = useCallback(async () => {
+  if (!session?.user || !activeUnitId) return;
+
+  try {
+    const { data, error } = await supabase
+      .from('collection_history')
+      .select('id, unit_id, p1_collected, p5_collected, p10_collected, total_amount, collected_at')
+      .eq('unit_id', activeUnitId)
+      .order('collected_at', { ascending: false });
+
+    if (error) throw error;
+
+    const history = (data ?? []).map((row: any) => ({
+      id: row.id,
+      date: new Date(row.collected_at).toLocaleString(),
+      p1: row.p1_collected ?? 0,
+      p5: row.p5_collected ?? 0,
+      p10: row.p10_collected ?? 0,
+      total: Number(row.total_amount ?? 0),
+    }));
+
+    setState(prev => ({ ...prev, history }));
+  } catch (err) {
+    console.error('fetchHistory error:', err);
+  }
+}, [session, activeUnitId]);
+
+useEffect(() => {
+  if (!session?.user || !activeUnitId) return;
+
+  // initial load
+  fetchMachineState();
+  fetchHistory();
+
+  // poll machine_state every 3 seconds
+  const id = window.setInterval(() => {
+    fetchMachineState();
+  }, 3000);
+
+  return () => window.clearInterval(id);
+}, [session, activeUnitId, fetchMachineState, fetchHistory]);
 
   const fetchAllData = useCallback(async () => {
-    // This function can be used to manually refresh data if needed
-    // but the primary data flow is through websockets.
+    const fetchAllData = useCallback(async () => {
+  await fetchMachineState();
+  await fetchHistory();
+}, [fetchMachineState, fetchHistory]);
   }, [activeUnitId]);
+
+  useEffect(() => {
+  if (activeUnitId) localStorage.setItem('active_unit_id', activeUnitId);
+}, [activeUnitId]);
 
   const handleDeleteUnit = async (unitIdToDelete: string) => {
     const confirmDelete = window.confirm(
