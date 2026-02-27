@@ -35,10 +35,11 @@ const INITIAL_STATE: VendoState = {
   insertedCoins: { p1: 0, p5: 0, p10: 0 },
   changeBank: { p1: 0, p5: 0 },
   waterLevel: 0,
-  systemAlerts: 'Operational',
-  lastUpdated: 'Initializing...',
+  systemAlerts: "",
+  lastUpdated: "",
   lastSeen: null,
   history: [],
+  alerts: [], // ✅ add
 };
 
 const App: React.FC = () => {
@@ -70,6 +71,7 @@ const App: React.FC = () => {
     lastSeen: data.last_seen_at ? new Date(data.last_seen_at).toLocaleString() : null,
     // history will be loaded from collection_history
     history: [],
+    alerts: [],
   };
 };
   // Multi-machine management
@@ -383,8 +385,17 @@ useEffect(() => {
   const renderSection = () => {
     switch (activeSection) {
       case Section.DASHBOARD:
-        return <Dashboard state={state} activeUnitId={activeUnitId} onReset={fetchAllData} onResetCounter={handleResetCounter} onExport={() => {}} isResetting={isResetting} />;
-      case Section.WATER:
+        return (
+  <Dashboard
+    state={state}
+    alerts={state.alerts}
+    activeUnitId={activeUnitId}
+    onReset={fetchAllData}
+    onResetCounter={handleResetCounter}
+    onExport={() => {}}
+    isResetting={isResetting}
+  />
+);
         return (
           <div className="space-y-6 sm:space-y-8 animate-in max-w-4xl mx-auto">
             <h1 className="text-2xl sm:text-3xl font-black text-[#0f172a] tracking-tight">Reservoir Status</h1>
