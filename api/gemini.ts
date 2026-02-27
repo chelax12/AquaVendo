@@ -1,4 +1,4 @@
-IDimport type { VercelRequest, VercelResponse } from "@vercel/node";
+import type { VercelRequest, VercelResponse } from "@vercel/node";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") {
@@ -33,5 +33,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).json({ text });
   } catch (error) {
     return res.status(500).json({ error: "Gemini request failed" });
+  }
+} error: "Gemini request failed" });
   }
 }
