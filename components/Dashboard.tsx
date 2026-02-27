@@ -1,11 +1,14 @@
 import React, { useState } from 'react';
 import { StatsCard } from './StatsCard';
 import { Coins, DollarSign, Droplets, AlertTriangle, Activity, RotateCcw, X, Info, Loader2, Zap, Download, ChevronRight } from 'lucide-react';
-import { VendoState } from '../types';
+import { VendoState, SystemAlert } from '../types';
 import { getCoinStatus } from '../src/utils';
+import { supabase } from '../lib/supabase';
+
 
 interface DashboardProps {
   state: VendoState;
+  alerts: SystemAlert[];
   activeUnitId: string;
   onReset: () => void;
   onResetCounter: () => void;
@@ -15,6 +18,7 @@ interface DashboardProps {
 
 export const Dashboard: React.FC<DashboardProps> = ({ 
   state, 
+  alerts,
   activeUnitId,
   onReset, 
   onResetCounter, 
@@ -22,6 +26,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
   isResetting = false
 }) => {
   const [showAlertModal, setShowAlertModal] = useState(false);
+  const [isRefillModalOpen, setIsRefillModalOpen] = useState(false);
+  const [refillDenomination, setRefillDenomination] = useState<'P1' | 'P5' | null>(null);
+  const [refillAmount, setRefillAmount] = useState('');
   const { 
     insertedCoins = { p1: 0, p5: 0, p10: 0 }, 
     changeBank = { p1: 0, p5: 0 },
@@ -33,6 +40,28 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const totalCoins = p1 + p5 + p10;
   const p1ChangeStatus = getCoinStatus(changeBank.p1);
   const p5ChangeStatus = getCoinStatus(changeBank.p5);
+
+  const openRefillModal = (denomination: 'P1' | 'P5') => {
+    setRefillDenomination(denomination);
+    setIsRefillModalOpen(true);
+    setRefillAmount('');
+  };
+
+  const handleConfirmRefill = async () => {
+    if (!refillDenomination || !refillAmount) return;
+    const amount = parseInt(refillAmount, 10);
+    if (!isNaN(amount) && amount > 0) {
+      await supabase.rpc('refill_hopper', {
+        unit_id_to_update: activeUnitId,
+        denomination: refillDenomination,
+        refill_type: 'ADD',
+        refill_value: amount
+      });
+      setIsRefillModalOpen(false);
+    } else {
+      alert('Please enter a valid number of coins.');
+    }
+  };
 
   const getWaterStatus = () => {
     const level = waterLevel;
@@ -119,7 +148,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
       <div className="mt-8 sm:mt-12">
         <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 px-2">Change Bank Status</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
-          <div className="bg-white p-6 sm:p-8 rounded-[32px] border border-slate-100 shadow-xl flex justify-between items-center">
+          <div onClick={() => openRefillModal('P1')} className="bg-white p-6 sm:p-8 rounded-[32px] border border-slate-100 shadow-xl flex justify-between items-center cursor-pointer">
             <div>
               <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">P1 Change</p>
               <span className="text-3xl sm:text-5xl font-black text-slate-800 tracking-tighter">{changeBank.p1}</span>
@@ -128,7 +157,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
               {p1ChangeStatus.text}
             </div>
           </div>
-          <div className="bg-white p-6 sm:p-8 rounded-[32px] border border-slate-100 shadow-xl flex justify-between items-center">
+          <div onClick={() => openRefillModal('P5')} className="bg-white p-6 sm:p-8 rounded-[32px] border border-slate-100 shadow-xl flex justify-between items-center cursor-pointer">
             <div>
               <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">P5 Change</p>
               <span className="text-3xl sm:text-5xl font-black text-slate-800 tracking-tighter">{changeBank.p5}</span>
@@ -148,9 +177,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   <Droplets className="w-7 h-7 sm:w-9 sm:h-9" />
                </div>
                <div>
-                  <p className="text-[9px] sm:text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 sm:mb-2">Liquid Reservoir</p>
+                  <p className="text-[9px] sm:text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 sm:mb-2">Water Level</p>
                   <h4 className={`text-3xl sm:text-5xl font-black ${status.color}`}>{state.waterLevel}%</h4>
-                  <p className="text-[10px] sm:text-[11px] font-bold text-slate-500 mt-1 sm:mt-2 uppercase tracking-tighter">Supply: {status.label}</p>
+                  <p className="text-[10px] sm:text-[11px] font-bold text-slate-500 mt-1 sm:mt-2 uppercase tracking-tighter">Water Status: {status.label}</p>
                </div>
             </div>
             <div className="h-16 w-16 sm:h-20 sm:w-20 relative hidden sm:block">
@@ -182,6 +211,32 @@ export const Dashboard: React.FC<DashboardProps> = ({
         </div>
       </div>
 
+      {isRefillModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 bg-[#0f172a]/80 backdrop-blur-md animate-in">
+          <div className="bg-white rounded-[32px] sm:rounded-[48px] shadow-[0_40px_100px_rgba(0,0,0,0.3)] w-full max-w-md overflow-hidden">
+            <div className="p-6 sm:p-10">
+              <h3 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tighter mb-2">Refill {refillDenomination} Hopper</h3>
+              <p className="text-sm text-slate-500 mb-6">Enter the number of coins you are adding.</p>
+              <input 
+                type="number"
+                value={refillAmount}
+                onChange={(e) => setRefillAmount(e.target.value)}
+                className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-center text-2xl font-bold text-slate-700 focus:outline-none focus:ring-4 focus:ring-blue-100 transition-all"
+                placeholder="e.g. 50"
+              />
+            </div>
+            <div className="p-6 sm:p-10 bg-slate-50 border-t border-slate-100 grid grid-cols-2 gap-4">
+              <button onClick={() => setIsRefillModalOpen(false)} className="w-full py-4 bg-white border border-slate-200 text-slate-900 font-black text-[10px] uppercase tracking-widest rounded-2xl hover:bg-slate-100 transition-all">
+                Cancel
+              </button>
+              <button onClick={handleConfirmRefill} className="w-full py-4 bg-blue-600 text-white font-black text-[10px] uppercase tracking-widest rounded-2xl hover:bg-blue-700 transition-all">
+                Confirm Refill
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showAlertModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 bg-[#0f172a]/80 backdrop-blur-md animate-in">
           <div className="bg-white rounded-[32px] sm:rounded-[48px] shadow-[0_40px_100px_rgba(0,0,0,0.3)] w-full max-w-xl overflow-hidden">
@@ -195,22 +250,17 @@ export const Dashboard: React.FC<DashboardProps> = ({
               </button>
             </div>
             <div className="p-6 sm:p-10 space-y-4 sm:space-y-5 max-h-[50vh] overflow-y-auto custom-scrollbar">
-              {[
-                { type: 'Supply System', msg: state.waterLevel < 20 ? 'Critical: Reservoir below 20% limit.' : 'Main supply pressure optimal.', time: state.lastUpdated, severity: state.waterLevel < 20 ? 'high' : 'low' },
-                { type: 'Internal Vault', msg: totalCoins > 500 ? 'Warning: Collector bin near capacity.' : 'Vault storage space confirmed.', time: 'Real-time', severity: totalCoins > 500 ? 'medium' : 'low' },
-                { type: 'Data Link', msg: 'Encrypted tunnel to Supabase verified.', time: 'Continuous', severity: 'low' },
-                { type: 'Power Management', msg: 'Bus voltage stable at 12.0V.', time: '04:12 AM', severity: 'low' }
-              ].map((alert, i) => (
-                <div key={i} className={`p-4 sm:p-6 rounded-[24px] sm:rounded-[32px] border flex gap-4 sm:gap-6 transition-all ${alert.severity === 'high' ? 'bg-red-50 border-red-100 text-red-900' : alert.severity === 'medium' ? 'bg-orange-50 border-orange-100 text-orange-900' : 'bg-slate-50 border-slate-100 text-slate-900'}`}>
+              {alerts.map((alert) => (
+                <div key={alert.id} className={`p-4 sm:p-6 rounded-[24px] sm:rounded-[32px] border flex gap-4 sm:gap-6 transition-all ${alert.severity === 'high' ? 'bg-red-50 border-red-100 text-red-900' : alert.severity === 'medium' ? 'bg-orange-50 border-orange-100 text-orange-900' : 'bg-slate-50 border-slate-100 text-slate-900'}`}>
                    <div className={`p-3 sm:p-4 rounded-[16px] sm:rounded-[20px] shrink-0 h-fit ${alert.severity === 'high' ? 'bg-red-200 shadow-inner' : alert.severity === 'medium' ? 'bg-orange-200' : 'bg-blue-200'}`}>
                       <Info className="w-4.5 h-4.5 sm:w-5 sm:h-5" />
                    </div>
                    <div className="flex-1">
                       <div className="flex justify-between items-start mb-1 sm:mb-2">
                         <span className="font-black text-[9px] sm:text-[10px] uppercase tracking-widest opacity-60">{alert.type}</span>
-                        <span className="text-[9px] sm:text-[10px] opacity-40 font-black">{alert.time}</span>
+                        <span className="text-[9px] sm:text-[10px] opacity-40 font-black">{new Date(alert.created_at).toLocaleTimeString()}</span>
                       </div>
-                      <p className="text-xs sm:text-sm font-bold leading-relaxed">{alert.msg}</p>
+                      <p className="text-xs sm:text-sm font-bold leading-relaxed">{alert.message}</p>
                    </div>
                 </div>
               ))}

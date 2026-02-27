@@ -17,8 +17,12 @@ export const SalesReport: React.FC<SalesReportProps> = ({ state, activeUnitId, o
   const stats = useMemo(() => {
     const now = new Date();
     const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-    const startOfWeek = now.getTime() - (7 * 24 * 60 * 60 * 1000);
-    const startOfMonth = now.getTime() - (30 * 24 * 60 * 60 * 1000);
+    
+    // Calculate start of week (last 7 days)
+    const startOfWeek = new Date(now.getTime() - (7 * 24 * 60 * 60 * 1000)).getTime();
+    
+    // Calculate start of month (last 30 days)
+    const startOfMonth = new Date(now.getTime() - (30 * 24 * 60 * 60 * 1000)).getTime();
 
     const aggregate = (sinceTimestamp: number) => {
       return state.history
@@ -26,19 +30,21 @@ export const SalesReport: React.FC<SalesReportProps> = ({ state, activeUnitId, o
         .reduce((sum, h) => sum + h.total, 0);
     };
 
+    // Live stats: include current vault total in the current period
+    // We assume current vault coins were inserted today (since the last reset)
     return {
-      daily: aggregate(startOfDay),
-      weekly: aggregate(startOfWeek),
-      monthly: aggregate(startOfMonth),
-      allTime: state.history.reduce((sum, h) => sum + h.total, 0)
+      daily: aggregate(startOfDay) + currentVaultTotal,
+      weekly: aggregate(startOfWeek) + currentVaultTotal,
+      monthly: aggregate(startOfMonth) + currentVaultTotal,
+      allTime: state.history.reduce((sum, h) => sum + h.total, 0) + currentVaultTotal
     };
-  }, [state.history]);
+  }, [state.history, currentVaultTotal]);
 
   return (
     <div className="space-y-8 sm:space-y-10 animate-in">
       <header className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4 sm:gap-0">
         <div>
-          <h1 className="text-3xl sm:text-4xl font-black text-[#0f172a] tracking-tighter">Sales Terminal</h1>
+          <h1 className="text-3xl sm:text-4xl font-black text-[#0f172a] tracking-tighter">AQUAVEND Terminal</h1>
           <p className="text-[10px] sm:text-sm text-slate-400 font-bold uppercase tracking-widest mt-1 sm:mt-2 flex items-center gap-2">
             <Database className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-blue-600" />
             Node: {activeUnitId}

@@ -19,6 +19,9 @@ export const Login: React.FC<LoginProps> = ({ onShowSignUp }) => {
     setLoading(true);
     setError(null);
     try {
+      // Clear any stale session before attempting login
+      await supabase.auth.signOut();
+      
       if (loginMethod === 'email') {
         const { error } = await supabase.auth.signInWithPassword({
           email: email,
@@ -57,7 +60,7 @@ export const Login: React.FC<LoginProps> = ({ onShowSignUp }) => {
         <div className="w-16 h-16 bg-blue-600 rounded-3xl flex items-center justify-center text-white shadow-lg shadow-blue-600/30 mb-4">
           <Zap size={32} />
         </div>
-        <h1 className="text-2xl font-black text-slate-800 tracking-tight">AQUAFLOW</h1>
+        <h1 className="text-2xl font-black text-slate-800 tracking-tight">AQUAVEND</h1>
         <h2 className="text-xl font-bold text-slate-600 tracking-tight">Owner Login</h2>
         <p className="text-sm text-slate-500 mt-1">Access your fleet dashboard</p>
       </div>

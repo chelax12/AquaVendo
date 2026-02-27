@@ -13,6 +13,16 @@ export interface CoinData {
   p10: number;
 }
 
+export interface SystemAlert {
+  id: string;
+  created_at: string;
+  unit_id: string;
+  type: string;
+  message: string;
+  severity: 'low' | 'medium' | 'high';
+  is_acknowledged: boolean;
+}
+
 export interface HistoryEntry {
   id: string;
   date: string;
@@ -30,4 +40,6 @@ export interface VendoState {
   lastUpdated: string;
   lastSeen: string | null;
   history: HistoryEntry[];
+  alerts: SystemAlert[];
+
 }
