@@ -5,7 +5,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: "Use POST method" });
   }
 
-  const { prompt = "" } = req.body ?? {};
+  const { prompt = "" } = (req.body ?? {}) as { prompt?: string };
   const apiKey = process.env.GEMINI_API_KEY;
 
   if (!apiKey) {
@@ -24,16 +24,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     );
 
-    const data = await response.json();
-
+    const data: any = await response.json();
     const text =
       data?.candidates?.[0]?.content?.parts?.map((p: any) => p.text).join("") ??
       "";
 
     return res.status(200).json({ text });
-  } catch (error) {
+  } catch {
     return res.status(500).json({ error: "Gemini request failed" });
-  }
-} error: "Gemini request failed" });
   }
 }
